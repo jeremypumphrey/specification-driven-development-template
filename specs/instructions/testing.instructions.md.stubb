@@ -1,0 +1,167 @@
+# Testing instructions
+
+## Purpose
+Single source of truth for how tests are written, organized, and run across all layers.
+For **when** tests run in the pipeline, see `ci-cd-pipeline.instructions.md`.
+For layer-specific design guidance that is not test-specific, see `backend.instructions.md`, `frontend.instructions.md`, and `infrastructure.instructions.md`.
+
+## Test categories
+
+| Category | Definition | When it runs |
+|---|---|---|
+| **Unit** | Tests a single module in isolation with all external dependencies mocked or stubbed. | Every CI run and every deploy pipeline run, before any deployment. |
+| **Integration / Smoke** | Tests a live deployed environment end-to-end over the network. Requires `API_BASE_URL`. | Post-deployment in each tier (Integration, UAT, Production). |
+| **Contract** | Validates API response shapes against `shared/api_schema.json`. | Inline within smoke tests — no separate runner needed. |
+| **Infrastructure** | CDK assertion tests that verify synthesized CloudFormation templates. | Every CI run alongside unit tests. |
+<!-- TODO: Decide whether to add an E2E / browser-level category (e.g., Playwright or Cypress for frontend flows). Currently no browser-level tests exist. -->
+
+## Frameworks and tooling
+
+### Backend (Python)
+- **Test runner:** pytest >= 7.4
+- **Coverage:** pytest-cov >= 4.1
+- **AWS mocking:** moto[dynamodb] >= 5.0
+- **General mocking:** `unittest.mock` (stdlib) — `patch` and `MagicMock`
+- **Dependency manager:** uv (run tests with `uv run pytest`)
+
+### Frontend (JavaScript / Vue)
+- **Test runner:** vitest >= 4.1
+- **DOM environment:** jsdom >= 29.1 (configured in `vite.config.js` → `test.environment`)
+- **Component testing:** @vue/test-utils >= 2.4
+- **Mocking:** `vi.mock` (vitest built-in) for module-level mocks
+- **Run command:** `npm run test:unit` (alias for `vitest run`)
+
+### Infrastructure (Python / CDK)
+- **Test runner:** pytest >= 7.4
+- **Assertion library:** `aws_cdk.assertions` (`Template.from_stack`, `has_resource_properties`, `resource_count_is`)
+- **Dependency manager:** uv (run tests with `uv run pytest`)
+
+## Directory layout and naming
+
+```
+backend/
+  tests/
+    __init__.py
+    conftest.py              # shared fixtures (if needed)
+    test_handler.py          # unit — Lambda handler routing
+    test_service.py          # unit — business logic
+    test_repository.py       # unit — DynamoDB operations (moto)
+    test_models.py           # unit — input validation / data classes
+    smoke/
+      __init__.py
+      test_api_smoke.py      # integration — live CRUD + contract checks
+
+frontend/
+  tests/
+    unit/
+      BookList.spec.js       # component — BookList states
+      BookForm.spec.js       # component — form validation & submission
+      books.spec.js          # API client functions (mocked fetch)
+
+infrastructure/
+  tests/
+    __init__.py
+    test_data_stack.py       # CDK assertions — DynamoDB table
+    test_api_stack.py        # CDK assertions — API Gateway + Lambda
+    test_ui_stack.py         # CDK assertions — S3 + CloudFront
+    test_tags.py             # CDK assertions — resource tagging
+```
+
+### Naming conventions
+- **Backend / Infrastructure:** files named `test_<module>.py`, functions named `test_<behavior>()`.
+- **Frontend:** files named `<Component>.spec.js` or `<module>.spec.js` in `tests/unit/`.
+- **Smoke / Integration:** files live under `tests/smoke/` within the backend and are named `test_<scope>_smoke.py`.
+<!-- TODO: Decide on a naming convention for future E2E test files if a browser-level test framework is adopted. -->
+
+## Mocking standards
+
+### Backend
+- Use **moto** (`@mock_aws`) to mock DynamoDB in repository tests. Create the table in a pytest fixture and tear it down automatically.
+- Use **`unittest.mock.patch`** to mock service and repository layers when testing the handler.
+- Never call real AWS services in unit tests. The `TABLE_NAME` and `CORS_ALLOW_ORIGIN` environment variables should be set to test values in the test module or via conftest.
+- Keep mocks at the boundary: handler tests mock the service, service tests mock the repository, repository tests mock DynamoDB via moto.
+
+### Frontend
+- Use **`vi.mock`** to replace API client modules (`src/api/books.js`) with vitest auto-mocks.
+- Stub return values per test with `booksApi.<method>.mockResolvedValue(...)`.
+- Use `flushPromises()` from `@vue/test-utils` after triggering async operations before asserting on DOM state.
+
+### Infrastructure
+- No mocking needed — CDK assertion tests synthesize the stack in-process and inspect the CloudFormation template directly.
+- Use a deterministic dummy environment name (e.g., `"test"`) and dummy account/region values (`CDK_DEFAULT_ACCOUNT=000000000000`, `CDK_DEFAULT_REGION=us-east-1`).
+
+## Running tests locally
+
+```bash
+# Backend unit tests
+cd backend && uv run pytest --tb=short
+
+# Backend unit tests with coverage
+cd backend && uv run pytest --cov=books --cov-report=term-missing
+
+# Backend smoke tests (requires a deployed environment)
+cd backend && API_BASE_URL=https://<api-gw-url>/<stage> uv run pytest tests/smoke/ --tb=short
+
+# Frontend unit tests
+cd frontend && npm run test:unit
+
+# Infrastructure tests (requires CDK synth context)
+cd infrastructure && uv run pytest --tb=short
+```
+
+## Coverage policy
+- **Backend:** pytest-cov is installed and available. Run with `--cov=books --cov-report=term-missing`.
+<!-- TODO: Define a minimum coverage threshold (e.g., 80%) and whether to enforce it in CI with `--cov-fail-under`. -->
+<!-- TODO: Decide whether to publish coverage reports as CI artifacts or to a coverage service. -->
+- **Frontend:** vitest has built-in coverage support via `@vitest/coverage-v8` or `@vitest/coverage-istanbul`.
+<!-- TODO: Install a vitest coverage provider and define a minimum threshold. -->
+- **Infrastructure:** Coverage is not typically tracked for CDK assertion tests.
+
+## Integration / smoke test contract
+
+### Required environment variables
+| Variable | Description |
+|---|---|
+| `API_BASE_URL` | Full URL of the deployed API Gateway stage (e.g., `https://abc123.execute-api.us-east-1.amazonaws.com/integration`) |
+
+### What constitutes a passing smoke run
+- Full CRUD lifecycle: create → read → update → read → delete → confirm 404.
+- Search: create a book, search by partial title, verify result, clean up.
+- Validation: POST with missing required fields returns 400 with `VALIDATION_ERROR`.
+- Not-found: GET a non-existent `book_id` returns 404 with `NOT_FOUND`.
+- Contract: every response body shape is validated against `shared/api_schema.json` definitions.
+
+### Failure handling
+- Smoke tests that cannot reach the API (connection error or timeout) should be marked as errors, not skipped.
+- Tests that create data must clean up after themselves (delete created books) to avoid polluting the environment.
+<!-- TODO: Define a timeout/retry policy for flaky network calls in smoke tests. -->
+<!-- TODO: Decide whether Production smoke tests should be strictly read-only (the ci-cd spec says "read only integration tests" for Production). Implement a read-only smoke suite or parameterize the existing one. -->
+
+## Test data strategy
+- **Unit tests (backend):** Inline factory helpers (`_sample_book()`, `_make_event()`) defined within test modules create deterministic test data. No shared fixture files.
+- **Unit tests (frontend):** Inline sample data arrays (`sampleBooks`) defined per spec file.
+- **Smoke tests:** Tests create their own data via the API, use UUIDs for uniqueness, and delete data in teardown.
+- **Seed data:** The feature spec defines seed books for DynamoDB. Seed data is loaded via a deployment script, not by tests. Tests must not depend on seed data being present.
+<!-- TODO: Consider extracting shared test factories into a conftest.py (backend) or test-utils.js (frontend) if duplication grows. -->
+
+## Test tagging and selective execution
+- **Backend unit vs. smoke:** Smoke tests live in `tests/smoke/` and are excluded from the default `pytest` run by directory. To run only smoke tests: `uv run pytest tests/smoke/`.
+- **Frontend:** All frontend tests are unit tests currently and run via `npm run test:unit`.
+<!-- TODO: If the test suite grows, consider using pytest markers (e.g., `@pytest.mark.integration`) to allow selective runs beyond directory-based separation. -->
+<!-- TODO: If E2E tests are added, define a separate npm script (e.g., `test:e2e`) and a dedicated CI job. -->
+
+## Accessibility testing
+- The frontend spec requires "accessibility and semantic markup."
+- Currently there is no automated accessibility testing tooling.
+<!-- TODO: Evaluate adding axe-core (via vitest-axe or @axe-core/playwright) for automated a11y assertions in component or E2E tests. -->
+
+## Open questions
+<!-- These items are intentionally left unresolved for future spec development. -->
+- [ ] Should a minimum code coverage threshold be enforced in CI, and if so, what percentage?
+- [ ] Should coverage reports be published as CI artifacts or to an external service?
+- [ ] Should E2E / browser-level tests be added (Playwright, Cypress), and if so, for which flows?
+- [ ] Should Production smoke tests be a strictly read-only subset, and how should that be parameterized?
+- [ ] Should pytest markers be adopted for more granular test selection beyond directory-based separation?
+- [ ] What is the timeout and retry policy for integration tests against live environments?
+- [ ] Should automated accessibility testing (axe-core) be added to the frontend test suite?
+- [ ] Should vitest coverage provider be installed and a coverage threshold enforced for frontend?

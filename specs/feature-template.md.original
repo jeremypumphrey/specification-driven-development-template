@@ -1,0 +1,60 @@
+# Feature Spec Template
+
+## Title
+Feature title
+
+## Problem statement
+Describe the current problem and why it matters.
+
+## Goal
+Describe the measurable outcome this feature should achieve.
+
+## Non-goals
+List what is explicitly out of scope.
+
+## User stories
+- As a ...
+- I want ...
+- So that ...
+
+## Functional requirements
+- Requirement 1
+- Requirement 2
+- Requirement 3
+
+## API contract
+- Endpoint:
+- Method:
+- Request:
+- Response:
+- Errors:
+
+## Data model
+- Entities:
+- DynamoDB access patterns:
+- Indexes:
+- Validation rules:
+
+## UI requirements
+- Screens:
+- Forms:
+- States:
+- Empty/error/loading behavior:
+
+## Infrastructure impacts
+- S3:
+- CloudFront:
+- API Gateway:
+- Lambda:
+- DynamoDB:
+- IAM:
+
+## Test requirements
+- Unit tests:
+- Integration tests:
+- Contract tests:
+
+## Acceptance criteria
+- Criterion 1
+- Criterion 2
+- Criterion 3
