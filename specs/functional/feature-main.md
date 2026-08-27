@@ -39,17 +39,23 @@ Deliver a web application that provides key bookstore functions for both custome
 
 ## API contract
 
+
 ### Data types
 
 ## Data model
 
+
 ## UI requirements
+
 
 ## Infrastructure impacts
 
+
 ## Test requirements
 
+
 ## Acceptance criteria
+- Each deployment should erase the DB contents and seed the books below. Those books should be used in post-deployment validation testing. 
 
 ## Seed Data to add to DynamoDB
 - Book 1

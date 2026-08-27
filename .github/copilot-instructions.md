@@ -4,10 +4,10 @@
 Generate code that matches the project spec exactly.
 
 ## Core rules
-- Follow repository guidance files first:
+- Follow authoritative repository specification files first:
   - `AGENTS.md`
-  - `specs/instructions/*.instructions.md`
-  - `specs/*.md`
+  - `specs/technical/*.md`
+  - `specs/functional/*.md`
 
 
 
