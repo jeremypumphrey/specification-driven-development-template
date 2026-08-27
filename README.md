@@ -1,4 +1,4 @@
-# sdd_boilerplate
+# specification-driven-development-template
 A repo of the current best Specification files used to launch new applications
 
 I like to Plan with Claude Opus 4.8 & High
